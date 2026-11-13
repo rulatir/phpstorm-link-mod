@@ -1,5 +1,4 @@
 {
   "name": "phpstorm-links",
-  "version": "0.1.0",
   "description": "Opens https://phpstorm.intercept/… links in assistant messages as phpstorm:// URLs."
 }

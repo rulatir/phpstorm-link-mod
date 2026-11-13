@@ -20,6 +20,17 @@ export function interceptTargets(text: string): string[] {
   return [...found]
 }
 
+// A markdown link target `](phpstorm://…)`: group 1 is what follows the scheme.
+const PHPSTORM_TARGET = /\]\(phpstorm:\/\/([^\s()]*)\)/g
+
+// Returns `text` with each markdown link target `phpstorm://<rest>` replaced by
+// `https://phpstorm.intercept/<rest>`. `Markdown` draws no link for a
+// `phpstorm:` target; it draws one for the `https:` target. Link text and
+// bare URLs outside link syntax stay as written.
+export function rewritePhpstormLinks(text: string): string {
+  return text.replace(PHPSTORM_TARGET, '](https://phpstorm.intercept/$1)')
+}
+
 // Returns the phpstorm:// URL for an intercept target, or undefined for any
 // other target.
 export function phpstormUrl(href: string): string | undefined {

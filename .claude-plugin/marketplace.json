@@ -1,0 +1,5 @@
+{
+  "name": "phpstorm-link-mod",
+  "owner": { "name": "rulatir" },
+  "plugins": [{ "name": "phpstorm-links", "source": "./phpstorm-links" }]
+}

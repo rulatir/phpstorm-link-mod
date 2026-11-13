@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { editorWindowId, fileBasename, interceptTargets, phpstormUrl } from './links'
+import { editorWindowId, fileBasename, interceptTargets, phpstormUrl, rewritePhpstormLinks } from './links'
 
 const GDBUS_MATCH =
   "([('0_{d6579f51-96f8}', 'cerise – a.php', '', 30, 0.7, {}), " +
@@ -24,6 +24,36 @@ test('intercept targets are found, deduplicated, and others skipped', () => {
     'http://phpstorm.intercept/x',
   ])
   expect(interceptTargets('[x](https://phpstorm.intercepted/y)')).toEqual([])
+})
+
+test('phpstorm:// link targets become intercept targets; text and bare URLs stay', () => {
+  expect(rewritePhpstormLinks('See [a.php:12](phpstorm://open?file=/srv/a.php&line=12).')).toBe(
+    `See [a.php:12](${LINK}).`,
+  )
+  expect(rewritePhpstormLinks('**[a](phpstorm://open?file=/a&line=1)**')).toBe(
+    '**[a](https://phpstorm.intercept/open?file=/a&line=1)**',
+  )
+  expect(rewritePhpstormLinks('Bare phpstorm://open?file=/a and [x](https://example.com).')).toBe(
+    'Bare phpstorm://open?file=/a and [x](https://example.com).',
+  )
+})
+
+test('a phpstorm:// link is drawn pressable on desktop and left to the terminal', async ($, on) => {
+  on('ui.render', ($, e) => {
+    const { Text } = $.ui.resolve(e)
+    return <Text>engine</Text>
+  })
+  const written = 'See [a.php:12](phpstorm://open?file=/srv/a.php&line=12).'
+
+  const desktop = await $.ui.mount(message(written, 'desktop'))
+  const md = await desktop.find({ key: 'phpstorm-links' })
+  expect(md?.props.text).toBe(`See [a.php:12](${LINK}).`)
+  expect(md?.props.pressableLinks).toEqual([LINK])
+  await desktop.unmount()
+
+  const terminal = await $.ui.mount(message(written, 'terminal'))
+  expect(await terminal.find({ key: 'phpstorm-links' })).toBeUndefined()
+  await terminal.unmount()
 })
 
 test('the rewrite maps the path after the host onto phpstorm://', () => {
@@ -81,6 +111,26 @@ test('a message with an intercept link draws one Markdown that claims only that 
   expect(runs[0]?.at(-1)).toBe('phpstorm://open?file=/srv/a.php&line=12')
   expect(runs[1]?.at(-1)).toBe('a.php')
   expect(runs[2]?.slice(-2)).toEqual(['0_{d6579f51-96f8}', ''])
+})
+
+test('the link rule is added to the system prompt on desktop only', async ($, on) => {
+  on('prompt.compose', () => ({ sections: [{ id: 'intro', text: 'engine', scope: 'shared' }] }))
+
+  const input = {
+    model: 'claude-opus-5-5',
+    promptModel: 'claude-opus-5-5',
+    tools: [],
+    outputStyle: null,
+    traits: [],
+  } as const
+
+  const desktop = await $.prompt.compose({ ...input, surfaces: ['desktop'] })
+  expect(desktop.sections.map(s => s.id)).toEqual(['intro', 'phpstorm-links:rule'])
+  expect(desktop.sections[1]?.text).toContain('phpstorm://open?file=')
+  expect(desktop.sections[1]?.text).not.toContain('phpstorm.intercept')
+
+  const terminal = await $.prompt.compose({ ...input, surfaces: ['terminal'] })
+  expect(terminal.sections.map(s => s.id)).toEqual(['intro'])
 })
 
 test('a message without an intercept link goes to the engine', async ($, on) => {

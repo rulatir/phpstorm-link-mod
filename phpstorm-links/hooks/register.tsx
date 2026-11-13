@@ -1,6 +1,6 @@
 import type { EngineInterface, Register } from 'claude-code'
 
-import { editorWindowId, fileBasename, interceptTargets, phpstormUrl } from './links'
+import { editorWindowId, fileBasename, interceptTargets, phpstormUrl, rewritePhpstormLinks } from './links'
 
 // `setsid -f` detaches xdg-open, and the redirects close the pipes
 // `$.process.run` reads, so the call returns before PhpStorm exits.
@@ -37,12 +37,37 @@ async function open($: EngineInterface, href: string): Promise<void> {
     return
   }
   const basename = fileBasename(url)
-  if (basename !== undefined) await raise($, basename)
+  // Raising the window needs KWin; without it PhpStorm still opens the file.
+  if (basename !== undefined) await raise($, basename).catch(() => undefined)
 }
 
+// The system prompt section that tells the model which link form to write.
+export const LINK_RULE = [
+  '# Code links open in PhpStorm',
+  'The phpstorm-links mod in this session opens code links in PhpStorm.',
+  'Whenever you reference a file, or a line in a file, on this machine, write',
+  'a markdown link with the target',
+  '`phpstorm://open?file=<absolute path>&line=<N>`',
+  '(`&line=1` when no line applies) and the link text `<basename>:<N>`, as in',
+  '[Kernel.php:42](phpstorm://open?file=/srv/app/src/Kernel.php&line=42).',
+  'Use this form in place of project-relative links.',
+].join('\n')
+
 export const register: Register = on => {
+  // The click handling works on the desktop surface, so the rule goes only to
+  // sessions drawn there.
+  on('prompt.compose', async (_, e, next) => {
+    const composed = await next(e)
+    if (!e.surfaces.includes('desktop')) return composed
+    return {
+      sections: [...composed.sections, { id: 'phpstorm-links:rule', text: LINK_RULE, scope: 'session' }],
+    }
+  })
+
   on('ui.render', { component: 'AssistantMessage' }, ($, e, next) => {
-    const targets = interceptTargets(e.props.text)
+    // The terminal opens phpstorm:// links by itself; the desktop app does not.
+    const text = e.surface === 'desktop' ? rewritePhpstormLinks(e.props.text) : e.props.text
+    const targets = interceptTargets(text)
     if (targets.length === 0) return next(e)
 
     const { Markdown } = $.ui.resolve(e)
@@ -50,7 +75,7 @@ export const register: Register = on => {
     return (
       <Markdown
         key="phpstorm-links"
-        text={e.props.text}
+        text={text}
         pressableLinks={targets}
         onLinkPress={link => {
           open($, link.href).catch((error: unknown) => $.ui.toast(`phpstorm-links: ${String(error)}`))
