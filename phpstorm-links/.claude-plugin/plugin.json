@@ -1,4 +1,4 @@
 {
   "name": "phpstorm-links",
-  "description": "Opens https://phpstorm.intercept/… links in assistant messages as phpstorm:// URLs."
+  "description": "Makes phpstorm:// code links in assistant messages open PhpStorm in the Claude desktop app."
 }
